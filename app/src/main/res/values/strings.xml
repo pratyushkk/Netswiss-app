@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">NetSwiss</string>
+    <string name="tab_gps">GPS</string>
+    <string name="tab_network">Network</string>
+    <string name="tab_speed">Speed</string>
+    <string name="mock_gps_title">Mock GPS</string>
+    <string name="mock_gps_desc">Spoof device location</string>
+    <string name="network_title">Network Mode</string>
+    <string name="network_desc">5G/LTE switcher &amp; signal info</string>
+    <string name="speed_title">Speed Monitor</string>
+    <string name="speed_desc">Live download speed</string>
+    <string name="enable_mocking">Enable Mocking</string>
+    <string name="disable_mocking">Disable Mocking</string>
+    <string name="open_radio_info">Open Radio Settings</string>
+    <string name="start_monitoring">Start Monitor</string>
+    <string name="stop_monitoring">Stop Monitor</string>
+    <string name="speed_notification_channel">Speed Monitor</string>
+    <string name="mock_notification_channel">Mock Location</string>
+    <string name="no_signal">No Signal</string>
+    <string name="radio_info_unavailable">RadioInfo is not available on this device</string>
+    <string name="latitude">Latitude</string>
+    <string name="longitude">Longitude</string>
+    <string name="tap_map_hint">Tap the map to select coordinates</string>
+    <string name="permission_required">Permission required</string>
+</resources>
