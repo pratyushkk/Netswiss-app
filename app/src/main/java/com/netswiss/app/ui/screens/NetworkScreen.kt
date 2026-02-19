@@ -8,18 +8,32 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,11 +43,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.netswiss.app.ui.components.FeatureCard
+import com.netswiss.app.ui.components.AppCard
+import com.netswiss.app.ui.components.PrimaryButton
 import com.netswiss.app.ui.components.StatItem
-import com.netswiss.app.ui.components.glass.LiquidGlassButton
-import com.netswiss.app.ui.components.glass.LiquidGlassCard
-import com.netswiss.app.ui.theme.*
+import com.netswiss.app.ui.theme.NetworkBlue
+import com.netswiss.app.ui.theme.SignalExcellent
+import com.netswiss.app.ui.theme.SignalFair
+import com.netswiss.app.ui.theme.SignalGood
+import com.netswiss.app.ui.theme.SignalNone
+import com.netswiss.app.ui.theme.SignalPoor
+import com.netswiss.app.ui.theme.Spacing
 import com.netswiss.app.util.NetworkInfoProvider
 import com.netswiss.app.util.NetworkState
 
@@ -77,15 +96,14 @@ fun NetworkScreen(
     ) {
         Text(
             text = "Network Mode",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = Spacing.xxs)
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.SemiBold
         )
         Text(
             text = "Signal info & radio settings",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = Spacing.lg)
+            modifier = Modifier.padding(top = Spacing.xxs, bottom = Spacing.md)
         )
 
         // Signal Card
@@ -94,74 +112,89 @@ fun NetworkScreen(
         Spacer(modifier = Modifier.height(Spacing.md))
 
         // Radio Info Launcher
-        FeatureCard(
-            title = "Radio Settings",
-            subtitle = "Launch hidden RadioInfo activity",
-            icon = Icons.Default.Settings,
-            accentColor = NetworkBlue
-        ) {
-            Spacer(modifier = Modifier.height(Spacing.sm))
-            LiquidGlassButton(
-                text = "Open Radio Settings",
-                onClick = {
-                    try {
-                        val intent = Intent().apply {
-                            component = ComponentName(
-                                "com.android.phone",
-                                "com.android.phone.settings.RadioInfo"
-                            )
-                        }
-                        context.startActivity(intent)
-                    } catch (_: Exception) {
-                        // Fallback: try alternate package
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Text(
+                    text = "Radio Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Launch hidden RadioInfo activity",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                PrimaryButton(
+                    text = "Open Radio Settings",
+                    onClick = {
                         try {
-                            val intent = Intent(Intent.ACTION_MAIN).apply {
-                                setClassName("com.android.settings", "com.android.settings.RadioInfo")
+                            val intent = Intent().apply {
+                                component = ComponentName(
+                                    "com.android.phone",
+                                    "com.android.phone.settings.RadioInfo"
+                                )
                             }
                             context.startActivity(intent)
                         } catch (_: Exception) {
-                            Toast.makeText(
-                                context,
-                                "RadioInfo is not available on this device",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            // Fallback: try alternate package
+                            try {
+                                val intent = Intent(Intent.ACTION_MAIN).apply {
+                                    setClassName("com.android.settings", "com.android.settings.RadioInfo")
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "RadioInfo is not available on this device",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(Spacing.md))
 
         // Network details
-        FeatureCard(
-            title = "Network Details",
-            icon = Icons.Default.Info,
-            accentColor = NetworkBlue
-        ) {
-            Spacer(modifier = Modifier.height(Spacing.sm))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatItem(
-                    label = "Type",
-                    value = networkState.networkType,
-                    valueColor = NetworkBlue
-                )
-                StatItem(
-                    label = "Strength",
-                    value = if (networkState.signalStrengthDbm > -900) {
-                        "${networkState.signalStrengthDbm} dBm"
-                    } else "N/A",
-                    valueColor = getSignalColor(networkState.signalStrengthDbm)
-                )
-                StatItem(
-                    label = "Status",
-                    value = if (networkState.isConnected) "Connected" else "Disconnected",
-                    valueColor = if (networkState.isConnected) SignalExcellent else SignalNone
-                )
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Network Details",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(
+                        label = "Type",
+                        value = networkState.networkType,
+                        valueColor = NetworkBlue
+                    )
+                    StatItem(
+                        label = "Strength",
+                        value = if (networkState.signalStrengthDbm > -900) {
+                            "${networkState.signalStrengthDbm} dBm"
+                        } else "N/A",
+                        valueColor = getSignalColor(networkState.signalStrengthDbm)
+                    )
+                    StatItem(
+                        label = "Status",
+                        value = if (networkState.isConnected) "Connected" else "Disconnected",
+                        valueColor = if (networkState.isConnected) SignalExcellent else SignalNone
+                    )
+                }
             }
         }
     }
@@ -171,9 +204,8 @@ fun NetworkScreen(
 private fun SignalCard(networkState: NetworkState) {
     val signalColor = getSignalColor(networkState.signalStrengthDbm)
 
-    LiquidGlassCard(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
         contentPadding = PaddingValues(Spacing.xl)
     ) {
         Column(
@@ -227,7 +259,7 @@ private fun SignalCard(networkState: NetworkState) {
             Spacer(modifier = Modifier.height(Spacing.xs))
 
             // Signal quality label
-            Box(
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(signalColor.copy(alpha = 0.12f))

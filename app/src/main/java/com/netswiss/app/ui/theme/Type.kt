@@ -6,53 +6,67 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-private val GlassDisplay = FontFamily.SansSerif
-private val GlassBody = FontFamily.SansSerif
+private val AppFont = FontFamily.SansSerif
 
 val Typography = Typography(
     headlineLarge = TextStyle(
-        fontFamily = GlassDisplay,
-        fontWeight = FontWeight.Bold,
-        fontSize = 34.sp,
-        lineHeight = 40.sp,
-        letterSpacing = (-0.2).sp
-    ),
-    headlineMedium = TextStyle(
-        fontFamily = GlassDisplay,
+        fontFamily = AppFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 28.sp,
-        lineHeight = 34.sp,
-        letterSpacing = (-0.1).sp
+        lineHeight = 34.sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 24.sp,
+        lineHeight = 30.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = GlassDisplay,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = (-0.05).sp
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Medium,
+        fontSize = 20.sp,
+        lineHeight = 26.sp
     ),
-    bodyLarge = TextStyle(
-        fontFamily = GlassBody,
-        fontWeight = FontWeight.Normal,
-        fontSize = 17.sp,
+    titleMedium = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Medium,
+        fontSize = 18.sp,
         lineHeight = 24.sp
     ),
-    bodyMedium = TextStyle(
-        fontFamily = GlassBody,
+    bodyLarge = TextStyle(
+        fontFamily = AppFont,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 22.sp
     ),
+    bodyMedium = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
     labelLarge = TextStyle(
-        fontFamily = GlassBody,
+        fontFamily = AppFont,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.sp,
+        fontSize = 14.sp,
         lineHeight = 18.sp
     ),
-    labelSmall = TextStyle(
-        fontFamily = GlassBody,
-        fontWeight = FontWeight.Normal,
+    labelMedium = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Normal,
+        fontSize = 11.sp,
+        lineHeight = 14.sp
+    ),
+    displaySmall = TextStyle(
+        fontFamily = AppFont,
+        fontWeight = FontWeight.Bold,
+        fontSize = 34.sp,
+        lineHeight = 40.sp
     )
 )

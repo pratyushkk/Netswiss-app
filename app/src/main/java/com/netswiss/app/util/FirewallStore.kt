@@ -10,10 +10,12 @@ object FirewallStore {
 
     private val _blockedPackages = MutableStateFlow<Set<String>>(emptySet())
     val blockedPackages: StateFlow<Set<String>> = _blockedPackages
+    private var initialized = false
 
     fun init(context: Context) {
-        if (_blockedPackages.value.isNotEmpty()) return
+        if (initialized) return
         _blockedPackages.value = load(context)
+        initialized = true
     }
 
     fun setBlocked(context: Context, pkg: String, blocked: Boolean) {

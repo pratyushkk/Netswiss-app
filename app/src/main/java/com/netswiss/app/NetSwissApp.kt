@@ -35,11 +35,17 @@ class NetSwissApp : Application() {
         }
 
         // Global OSMDroid Configuration
-        org.osmdroid.config.Configuration.getInstance().load(
-            this, getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE)
-        )
-        // Set user agent to avoid bans
-        org.osmdroid.config.Configuration.getInstance().userAgentValue = packageName
+        org.osmdroid.config.Configuration.getInstance().apply {
+            load(this@NetSwissApp, getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE))
+            // OSM can throttle generic/empty user-agents; use a stable app UA.
+            userAgentValue = "NetSwiss-Android/1.0 (support@netswiss.app)"
+            // Keep a larger tile cache to avoid repeated network fetches.
+            tileFileSystemCacheMaxBytes = 300L * 1024L * 1024L
+            tileFileSystemCacheTrimBytes = 220L * 1024L * 1024L
+            // Improve initial tile fetch concurrency.
+            tileDownloadThreads = 4
+            tileFileSystemThreads = 2
+        }
 
         createNotificationChannels()
     }

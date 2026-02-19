@@ -26,6 +26,7 @@ class MockLocationService : Service() {
         const val EXTRA_LATITUDE = "extra_lat"
         const val EXTRA_LONGITUDE = "extra_lng"
         const val ACTION_STOP = "com.netswiss.app.STOP_MOCK"
+        const val ACTION_UPDATE = "com.netswiss.app.UPDATE_MOCK"
         private const val PROVIDER = LocationManager.GPS_PROVIDER
         private const val NOTIFICATION_ID = 1001
 
@@ -40,6 +41,8 @@ class MockLocationService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var mockJob: Job? = null
+    private var providerReady = false
+    private var lastNotifyAtMs = 0L
     
     private lateinit var locationManager: LocationManager
 
@@ -52,24 +55,32 @@ class MockLocationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
-            if (intent?.action == ACTION_STOP) {
+            val action = intent?.action
+            if (action == ACTION_STOP) {
                 stopSelf()
                 return START_NOT_STICKY
             }
 
-            // Important: enter foreground before any provider setup/work.
-            // This prevents ForegroundServiceDidNotStartInTimeException on Android.
-            isRunning = true
-            if (!startForegroundService()) {
-                isRunning = false
-                stopSelf()
-                return START_NOT_STICKY
-            }
-
-            // MANUAL mode only
             val lat = intent?.getDoubleExtra(EXTRA_LATITUDE, currentLat) ?: currentLat
             val lng = intent?.getDoubleExtra(EXTRA_LONGITUDE, currentLng) ?: currentLng
-            startManualMocking(lat, lng)
+            currentLat = lat
+            currentLng = lng
+
+            // First start: promote to foreground and start stable loop once.
+            if (!isRunning) {
+                isRunning = true
+                if (!startForegroundService()) {
+                    isRunning = false
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                ensureProviderReady()
+                ensureMockLoop()
+            }
+
+            // Update requests should never restart foreground or loop; just refresh coordinates.
+            pushMockLocation(currentLat, currentLng)
+            maybeUpdateNotification()
 
             return START_STICKY
         } catch (e: Exception) {
@@ -95,12 +106,14 @@ class MockLocationService : Service() {
         }
     }
 
-    private fun startManualMocking(lat: Double, lng: Double) {
+    private fun ensureProviderReady() {
+        if (providerReady) return
         setupTestProvider()
-        currentLat = lat
-        currentLng = lng
-        
-        mockJob?.cancel()
+        providerReady = true
+    }
+
+    private fun ensureMockLoop() {
+        if (mockJob?.isActive == true) return
         mockJob = scope.launch {
             while (isActive) {
                 pushMockLocation(currentLat, currentLng)
@@ -108,6 +121,14 @@ class MockLocationService : Service() {
             }
         }
         updateNotification("Mock GPS Active")
+    }
+
+    private fun maybeUpdateNotification() {
+        val now = System.currentTimeMillis()
+        if (now - lastNotifyAtMs >= 1500L) {
+            lastNotifyAtMs = now
+            updateNotification("Mock GPS Active")
+        }
     }
     
     private fun updateNotification(title: String) {
@@ -183,6 +204,7 @@ class MockLocationService : Service() {
         super.onDestroy()
         isRunning = false
         scope.cancel()
+        providerReady = false
         try {
             locationManager.setTestProviderEnabled(PROVIDER, false)
             locationManager.removeTestProvider(PROVIDER)

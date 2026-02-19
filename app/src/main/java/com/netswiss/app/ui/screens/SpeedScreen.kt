@@ -8,31 +8,52 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.netswiss.app.service.SpeedMonitorService
-import com.netswiss.app.ui.components.FeatureCard
+import com.netswiss.app.ui.components.AppCard
+import com.netswiss.app.ui.components.PrimaryButton
+import com.netswiss.app.ui.components.SegmentedControl
 import com.netswiss.app.ui.components.StatItem
-import com.netswiss.app.ui.components.glass.LiquidGlassButton
-import com.netswiss.app.ui.components.glass.LiquidGlassCard
-import com.netswiss.app.ui.theme.Spacing
+import com.netswiss.app.ui.components.StatusBadge
 import com.netswiss.app.ui.theme.SpeedOrange
+import com.netswiss.app.ui.theme.Spacing
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 enum class SpeedUnit(val label: String) {
     AUTO("Auto"),
@@ -41,12 +62,11 @@ enum class SpeedUnit(val label: String) {
     GBPS("Gbps")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpeedScreen(
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     var isMonitoring by remember { mutableStateOf(SpeedMonitorService.isRunning) }
     var downloadSpeed by remember { mutableDoubleStateOf(SpeedMonitorService.currentDownloadMbps) }
     var uploadSpeed by remember { mutableDoubleStateOf(SpeedMonitorService.currentUploadMbps) }
@@ -88,138 +108,68 @@ fun SpeedScreen(
     ) {
         Text(
             text = "Speed Monitor",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = Spacing.xxs)
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.SemiBold
         )
         Text(
             text = "Real-time network speed",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = Spacing.sm)
+            modifier = Modifier.padding(top = Spacing.xxs, bottom = Spacing.sm)
         )
 
-        // Unit Selector
-        LiquidGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = Spacing.md),
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(Spacing.sm)
-        ) {
-            Column(modifier = Modifier.padding(Spacing.sm)) {
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text(
                     text = "Display Unit",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = Spacing.xs, start = Spacing.xxs)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    SpeedUnit.values().forEach { unit ->
-                        FilterChip(
-                            selected = selectedUnit == unit,
-                            onClick = { selectedUnit = unit },
-                            label = {
-                                Text(
-                                    unit.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (selectedUnit == unit) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = SpeedOrange,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        )
-                    }
-                }
+                SegmentedControl(
+                    options = SpeedUnit.values().map { it.label },
+                    selectedIndex = SpeedUnit.values().indexOf(selectedUnit),
+                    onSelected = { selectedUnit = SpeedUnit.values()[it] }
+                )
             }
         }
 
-        // Download & Upload Speed Card
-        LiquidGlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            contentPadding = PaddingValues(24.dp)
-        ) {
+        Spacer(modifier = Modifier.height(Spacing.sm))
+
+        AppCard {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(0.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Download
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "↓ Download",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.xxs))
-                    Text(
-                        text = getSpeedValue(downloadSpeed, selectedUnit),
-                        style = MaterialTheme.typography.displaySmall.copy(fontSize = 42.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = SpeedOrange
-                    )
-                    Text(
-                        text = getSpeedUnitLabel(downloadSpeed, selectedUnit),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Divider
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(Spacing.xxxl * 2)
+                SpeedDisplay(
+                    title = "Download",
+                    value = downloadSpeed,
+                    unit = selectedUnit,
+                    accent = SpeedOrange
                 )
-
-                // Upload
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "↑ Upload",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.xxs))
-                    Text(
-                        text = getSpeedValue(uploadSpeed, selectedUnit),
-                        style = MaterialTheme.typography.displaySmall.copy(fontSize = 42.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = getSpeedUnitLabel(uploadSpeed, selectedUnit),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                SpeedDisplay(
+                    title = "Upload",
+                    value = uploadSpeed,
+                    unit = selectedUnit,
+                    accent = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(Spacing.md))
+        Spacer(modifier = Modifier.height(Spacing.sm))
 
-        // Stats
-        if (isMonitoring) {
-            FeatureCard(
-                title = "Session Stats",
-                icon = Icons.Default.Info,
-                accentColor = SpeedOrange,
-                isActive = true
-            ) {
-                Spacer(modifier = Modifier.height(Spacing.sm))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                ) {
-                    // Row 1: Peak Speeds
+        AnimatedVisibility(visible = isMonitoring) {
+            AppCard {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Session Stats",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        StatusBadge(text = "Live", color = SpeedOrange)
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -236,35 +186,20 @@ fun SpeedScreen(
                         )
                     }
 
-                    // Divider using Box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                            )
-                    )
+                    DividerLine()
 
-                    // Row 2: Data Usage
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        StatItem(
-                            label = "Data Downloaded",
-                            value = formatBytes(totalData)
-                        )
-                        StatItem(
-                            label = "Data Uploaded",
-                            value = formatBytes(totalTx)
-                        )
+                        StatItem(label = "Data Downloaded", value = formatBytes(totalData))
+                        StatItem(label = "Data Uploaded", value = formatBytes(totalTx))
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(Spacing.md))
+        Spacer(modifier = Modifier.height(Spacing.sm))
 
         // Latency Monitor
         var isPingEnabled by remember { mutableStateOf(false) }
@@ -292,31 +227,29 @@ fun SpeedScreen(
             }
         }
 
-        FeatureCard(
-            title = "Latency Monitor",
-            icon = Icons.Default.NetworkCheck,
-            accentColor = if (isStable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            isActive = isPingEnabled
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Real-time Ping (8.8.8.8)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Latency Monitor",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
                     )
+                    Spacer(modifier = Modifier.weight(1f))
                     Switch(
                         checked = isPingEnabled,
                         onCheckedChange = { isPingEnabled = it }
                     )
                 }
-
+                Text(
+                    text = "Real-time Ping (8.8.8.8)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (isPingEnabled) {
-                    Spacer(modifier = Modifier.height(Spacing.sm))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -334,17 +267,16 @@ fun SpeedScreen(
                         StatItem(
                             label = "Stability",
                             value = if (isStable) "Good" else "Poor",
-                            valueColor = if (isStable) androidx.compose.ui.graphics.Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+                            valueColor = if (isStable) androidx.compose.ui.graphics.Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(Spacing.md))
+        Spacer(modifier = Modifier.height(Spacing.sm))
 
-        // Toggle Button
-        LiquidGlassButton(
+        PrimaryButton(
             text = if (isMonitoring) "Stop Monitoring" else "Start Monitoring",
             onClick = {
                 if (isMonitoring) {
@@ -365,11 +297,53 @@ fun SpeedScreen(
                         isMonitoring = startSpeedServiceSafe(context)
                     }
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
+            }
         )
     }
+}
+
+@Composable
+private fun SpeedDisplay(
+    title: String,
+    value: Double,
+    unit: SpeedUnit,
+    accent: androidx.compose.ui.graphics.Color
+) {
+    val display = getSpeedDisplayValue(value, unit)
+    val animatedInt by animateIntAsState(targetValue = (display * 10).roundToInt(), label = "speedValue")
+    val displayText = "%.1f".format(animatedInt / 10f)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        BasicText(
+            text = displayText,
+            style = TextStyle(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = accent
+            )
+        )
+        Text(
+            text = getSpeedUnitLabel(value, unit),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun DividerLine() {
+    Spacer(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    )
 }
 
 private fun startSpeedServiceSafe(context: Context): Boolean {
@@ -383,27 +357,29 @@ private fun startSpeedServiceSafe(context: Context): Boolean {
     }
 }
 
-/** Convert Mbps to the selected unit and return the numeric value string */
-private fun getSpeedValue(mbps: Double, unit: SpeedUnit): String {
+private fun getSpeedDisplayValue(mbps: Double, unit: SpeedUnit): Double {
     return when (unit) {
         SpeedUnit.AUTO -> {
-            if (mbps < 1.0) "%.0f".format(mbps * 1000)
-            else if (mbps >= 1000) "%.2f".format(mbps / 1000)
-            else "%.2f".format(mbps)
+            when {
+                mbps < 1.0 -> mbps * 1000
+                mbps >= 1000 -> mbps / 1000
+                else -> mbps
+            }
         }
-        SpeedUnit.KBPS -> "%.0f".format(mbps * 1000)
-        SpeedUnit.MBPS -> "%.2f".format(mbps)
-        SpeedUnit.GBPS -> "%.4f".format(mbps / 1000)
+        SpeedUnit.KBPS -> mbps * 1000
+        SpeedUnit.MBPS -> mbps
+        SpeedUnit.GBPS -> mbps / 1000
     }
 }
 
-/** Get the unit label for the selected unit */
 private fun getSpeedUnitLabel(mbps: Double, unit: SpeedUnit): String {
     return when (unit) {
         SpeedUnit.AUTO -> {
-            if (mbps < 1.0) "Kbps"
-            else if (mbps >= 1000) "Gbps"
-            else "Mbps"
+            when {
+                mbps < 1.0 -> "Kbps"
+                mbps >= 1000 -> "Gbps"
+                else -> "Mbps"
+            }
         }
         SpeedUnit.KBPS -> "Kbps"
         SpeedUnit.MBPS -> "Mbps"
@@ -411,9 +387,9 @@ private fun getSpeedUnitLabel(mbps: Double, unit: SpeedUnit): String {
     }
 }
 
-/** Format speed with its unit label combined */
 private fun formatSpeedWithUnit(mbps: Double, unit: SpeedUnit): String {
-    return "${getSpeedValue(mbps, unit)} ${getSpeedUnitLabel(mbps, unit)}"
+    val value = getSpeedDisplayValue(mbps, unit)
+    return "%.2f %s".format(value, getSpeedUnitLabel(mbps, unit))
 }
 
 private fun formatBytes(bytes: Long): String {

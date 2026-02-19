@@ -1,13 +1,29 @@
 package com.netswiss.app.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -15,8 +31,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.netswiss.app.ui.components.glass.LiquidGlassCard
-import com.netswiss.app.ui.theme.Radius
 import com.netswiss.app.ui.theme.Spacing
 
 @Composable
@@ -29,21 +43,9 @@ fun FeatureCard(
     isActive: Boolean = false,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
-    val cardColor by animateColorAsState(
-        targetValue = if (isActive) {
-            accentColor.copy(alpha = 0.18f)
-        } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
-        },
-        animationSpec = tween(300),
-        label = "cardColor"
-    )
-
-    LiquidGlassCard(
+    AppCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(Radius.card),
-        tint = cardColor,
-        contentPadding = PaddingValues(Spacing.lg)
+        contentPadding = PaddingValues(Spacing.md)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
@@ -53,7 +55,7 @@ fun FeatureCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (icon != null) {
-                    Box(
+                    androidx.compose.foundation.layout.Box(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(RoundedCornerShape(Spacing.sm))
