@@ -1,55 +1,72 @@
 # NetSwiss App
 
-NetSwiss is an Android network utility toolkit built with Kotlin and Jetpack Compose.  
-It combines mock GPS tools, cellular network diagnostics, real-time speed monitoring, and a per-app firewall in one app.
+<p align="left">
+  <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white" alt="Android badge" />
+  <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin badge" />
+  <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="Compose badge" />
+  <img src="https://img.shields.io/badge/Min%20SDK-26-blue" alt="Min SDK badge" />
+  <img src="https://img.shields.io/badge/Target%20SDK-34-blue" alt="Target SDK badge" />
+</p>
+
+NetSwiss is an Android network utility toolkit built with Kotlin and Jetpack Compose. It combines mock GPS tools, cellular diagnostics, real-time speed monitoring, per-app firewall control, and package installation in one app.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[Compose UI Screens] --> VM[ViewModels]
+    VM --> UTIL[Utilities and Managers]
+    VM --> SVC[Foreground Services]
+    UTIL --> ANDROID[Android System APIs]
+    SVC --> ANDROID
+    ANDROID --> UI
+```
 
 ## Features
 
-### 1) Mock GPS
-- Full-screen map (OSMDroid) with tap-to-place marker.
-- Location search with live suggestions and manual search action.
-- Manual latitude/longitude input with validation.
-- Start/stop mock location foreground service.
-- "Locate me" action to center on current device location.
+### Mock GPS
+- Full-screen map (OSMDroid) with tap-to-place marker
+- Search with suggestions plus manual lat/lng entry
+- Start/stop mock location foreground service
+- "Locate me" recenter action
 
-### 2) Network Mode
-- Live network type and signal information.
-- Signal strength in dBm with quality indicator.
-- Quick launch button for device radio settings (if supported by OEM ROM).
+### Network Mode
+- Live network type and signal details
+- dBm display with quality indicator
+- Quick launch to radio settings (when OEM ROM allows)
 
-### 3) Speed Monitor
-- Real-time download/upload monitoring using `TrafficStats`.
-- Foreground notification with dynamic speed icon for status bar visibility.
-- Session stats: peak speeds and total transferred data.
-- Optional latency monitor (ping + jitter stability view).
+### Speed Monitor
+- Real-time up/down throughput via `TrafficStats`
+- Foreground notification with dynamic speed icon
+- Peak/session transfer stats
+- Optional ping/jitter stability view
 
-### 4) App Firewall
-- Per-app internet blocking using native `VpnService`.
-- Lists installed third-party apps with icon, label, and package.
-- Toggle internet block per app.
-- Foreground VPN service with notification action to stop firewall.
+### App Firewall
+- Per-app internet block using native `VpnService`
+- Installed app listing with label/icon/package
+- Toggle blocking per app
+- Foreground VPN notification and stop action
 
-### 5) UI and Theme
-- Compose-based UI with reusable glass-style components.
-- Dark/Light theme toggle from Home screen.
-- Material 3 theming with centralized tokens (`Color`, `Spacing`, `Radius`, `Motion`, `Glass`).
+### Package Installer
+- Secure install for `.apk`, `.aab`, `.xapk`, `.apks`, `.apkm`
+- Smart ZIP extraction + spoofing checks
+- Android `PackageInstaller` Session API integration
 
 ## Tech Stack
+
 - Kotlin
 - Jetpack Compose + Material 3
-- Android Navigation Compose
-- OSMDroid (map)
+- Navigation Compose
+- OSMDroid
 - Android Foreground Services
 - Android `VpnService`
-- Kotlin Coroutines + Flow
+- Coroutines + Flow
 
 ## Requirements
-- Android Studio Hedgehog+ recommended
+
+- Android Studio Hedgehog or newer
 - JDK 17
-- Android SDK:
-  - `compileSdk = 34`
-  - `targetSdk = 34`
-  - `minSdk = 26`
+- Android SDK `compileSdk=34`, `targetSdk=34`, `minSdk=26`
 
 ## Build and Run
 
@@ -58,40 +75,36 @@ It combines mock GPS tools, cellular network diagnostics, real-time speed monito
 ./gradlew installDebug
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 .\gradlew.bat assembleDebug
 .\gradlew.bat installDebug
 ```
 
-## Important Setup Notes
+## Setup Notes
 
-### Mock GPS setup
-1. Enable Developer Options on the device.
+### Mock GPS
+1. Enable Developer Options.
 2. Open Developer Options -> Select mock location app.
 3. Choose `NetSwiss`.
-4. Grant location permission when prompted.
+4. Grant location permission.
 
-If mock app selection is missing, Mock GPS cannot be started.
-
-### Firewall setup
+### Firewall
 1. Open Firewall tab.
-2. Tap "Start Firewall".
-3. Accept system VPN permission (first time only unless revoked).
-4. Toggle apps to block internet access.
+2. Tap Start Firewall.
+3. Accept VPN permission.
+4. Toggle apps to block/unblock internet.
 
-The firewall uses local VPN routing; no external VPN server is used.
+## Permissions
 
-## Permissions Used
 - `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`
-- `ACCESS_MOCK_LOCATION` (developer option workflow)
 - `READ_PHONE_STATE`
 - `ACCESS_NETWORK_STATE`
 - `INTERNET`
 - `POST_NOTIFICATIONS` (Android 13+)
-- `QUERY_ALL_PACKAGES` (to list installed apps)
-- Foreground service permissions and `BIND_VPN_SERVICE`
+- `QUERY_ALL_PACKAGES`
+- Foreground-service permissions + `BIND_VPN_SERVICE`
 
 ## Project Structure
 
@@ -107,6 +120,7 @@ app/src/main/java/com/netswiss/app
 ```
 
 ## Disclaimer
-- Some device/OEM ROM restrictions can limit hidden radio settings launch.
-- VPN/firewall behavior can vary by Android build and vendor network stack.
-- Use mock location and firewall features responsibly and according to local policy and app terms.
+
+- Hidden radio settings access depends on OEM restrictions.
+- VPN/firewall behavior may vary by Android vendor builds.
+- Use mock location and firewall features responsibly.

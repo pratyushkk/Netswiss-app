@@ -19,7 +19,7 @@ data class PingResult(
 object PingManager {
     private const val TAG = "PingManager"
     private const val TARGET_HOST = "8.8.8.8"
-    private const val PING_INTERVAL_MS = 1000L
+    private const val PING_INTERVAL_MS = 3000L
     private const val JITTER_THRESHOLD_MS = 50.0
     private const val HISTORY_SIZE = 10
 

@@ -86,7 +86,7 @@ fun SpeedScreen(
             totalData = SpeedMonitorService.totalBytes
             totalTx = SpeedMonitorService.totalTxBytes
             isMonitoring = SpeedMonitorService.isRunning
-            delay(1000)
+            delay(1500)
         }
     }
 

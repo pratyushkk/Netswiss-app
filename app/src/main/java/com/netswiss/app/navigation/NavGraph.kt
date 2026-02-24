@@ -34,6 +34,7 @@ import com.netswiss.app.ui.screens.NetworkScreen
 import com.netswiss.app.ui.screens.SpeedScreen
 import com.netswiss.app.ui.screens.FirewallScreen
 import com.netswiss.app.ui.screens.DiagnosticsScreen
+import com.netswiss.app.ui.screens.InstallerScreen
 import com.netswiss.app.ui.theme.surfaceColorAtElevation
 
 sealed class Screen(
@@ -48,7 +49,7 @@ sealed class Screen(
     data object Speed : Screen("speed", "Speed", Icons.Filled.Speed, Icons.Outlined.Speed)
     data object Diagnostics : Screen("diagnostics", "Diag", Icons.Filled.NetworkCheck, Icons.Filled.NetworkCheck)
     data object Firewall : Screen("firewall", "Firewall", Icons.Filled.Shield, Icons.Outlined.Shield)
-    // Radar removed
+    data object Installer : Screen("installer", "Installer", Icons.Filled.InstallMobile, Icons.Filled.InstallMobile)
 }
 
 val bottomNavItems = listOf(Screen.Home, Screen.Gps, Screen.Network, Screen.Speed, Screen.Diagnostics, Screen.Firewall)
@@ -170,6 +171,13 @@ fun NavGraph(
                             restoreState = true
                         }
                     },
+                    onNavigateToInstaller = {
+                        navController.navigate(Screen.Installer.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     isDarkTheme = isDarkTheme,
                     onToggleTheme = onToggleTheme,
                     modifier = Modifier.padding(innerPadding)
@@ -180,6 +188,7 @@ fun NavGraph(
             composable(Screen.Speed.route) { SpeedScreen(modifier = Modifier.padding(innerPadding)) }
             composable(Screen.Diagnostics.route) { DiagnosticsScreen(paddingValues = innerPadding) }
             composable(Screen.Firewall.route) { FirewallScreen(paddingValues = innerPadding) }
+            composable(Screen.Installer.route) { InstallerScreen(paddingValues = innerPadding) }
         }
     }
 }

@@ -12,3 +12,10 @@ local.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Local diagnostics / dumps
+*.log
+deps.txt
+crash_*.txt
+diag_*.xml
+window_dump.xml

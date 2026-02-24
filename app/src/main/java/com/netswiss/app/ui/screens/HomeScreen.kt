@@ -18,6 +18,9 @@ import androidx.compose.material.icons.filled.NetworkCell
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.InstallMobile
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +44,7 @@ fun HomeScreen(
     onNavigateToSpeed: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToFirewall: () -> Unit,
+    onNavigateToInstaller: () -> Unit,
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit,
     modifier: Modifier = Modifier
@@ -116,6 +120,13 @@ fun HomeScreen(
                 icon = Icons.Default.Shield,
                 accent = MaterialTheme.colorScheme.secondary,
                 onClick = onNavigateToFirewall
+            ),
+            HomeTile(
+                title = "Installer",
+                subtitle = "Install APK & bundles",
+                icon = Icons.Default.InstallMobile,
+                accent = MaterialTheme.colorScheme.tertiary,
+                onClick = onNavigateToInstaller
             )
         )
 

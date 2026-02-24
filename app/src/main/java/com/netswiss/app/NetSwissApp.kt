@@ -43,8 +43,8 @@ class NetSwissApp : Application() {
             tileFileSystemCacheMaxBytes = 300L * 1024L * 1024L
             tileFileSystemCacheTrimBytes = 220L * 1024L * 1024L
             // Improve initial tile fetch concurrency.
-            tileDownloadThreads = 4
-            tileFileSystemThreads = 2
+            tileDownloadThreads = 2
+            tileFileSystemThreads = 1
         }
 
         createNotificationChannels()

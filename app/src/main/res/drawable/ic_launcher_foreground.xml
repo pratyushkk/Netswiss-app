@@ -4,16 +4,41 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Background circle -->
-    <path
-        android:fillColor="#FF6750A4"
-        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
-    <!-- N letter -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M38,68V40h5l12,18V40h5v28h-5L43,50v18z" />
-    <!-- Signal dot -->
-    <path
-        android:fillColor="#FF79E77F"
-        android:pathData="M70,42m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-45">
+
+        <!-- White circle outline -->
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2.5"
+            android:pathData="M 54,22 A 32,32 0 1 1 54,86 A 32,32 0 1 1 54,22 Z" />
+
+        <!-- Black pill cutout mask to create gap -->
+        <path
+            android:fillColor="#000000"
+            android:strokeColor="#000000"
+            android:strokeWidth="4"
+            android:pathData="M 26,43 L 82,43 A 11,11 0 0 1 82,65 L 26,65 A 11,11 0 0 1 26,43 Z" />
+
+        <!-- White pill shape -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 26,43 L 82,43 A 11,11 0 0 1 82,65 L 26,65 A 11,11 0 0 1 26,43 Z" />
+
+        <!-- Black blade slit line -->
+        <path
+            android:strokeColor="#000000"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:pathData="M 42,47 L 66,47 A 5,5 0 0 1 71,52" />
+
+        <!-- Black hole -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M 73,51.5 A 2.5,2.5 0 1 1 73,56.5 A 2.5,2.5 0 1 1 73,51.5 Z" />
+
+    </group>
 </vector>

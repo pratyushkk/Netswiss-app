@@ -24,7 +24,8 @@ class SpeedMonitorService : Service() {
         private const val TAG = "SpeedMonitor"
         const val ACTION_STOP = "com.netswiss.app.STOP_SPEED"
         private const val NOTIFICATION_ID = 1002
-        private const val UPDATE_INTERVAL_MS = 1000L
+        private const val UPDATE_INTERVAL_MS = 1500L
+        private const val NOTIFICATION_MIN_INTERVAL_MS = 3000L
 
         @Volatile var isRunning = false
             private set
@@ -50,6 +51,11 @@ class SpeedMonitorService : Service() {
     private var previousRxBytes = 0L
     private var previousTxBytes = 0L
     private var previousTime = 0L
+    private var lastNotificationMs = 0L
+    private var lastNotifiedDownMbps = -1.0
+    private var lastNotifiedUpMbps = -1.0
+    private var lastIconKey: String? = null
+    private var lastIcon: IconCompat? = null
 
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -73,6 +79,9 @@ class SpeedMonitorService : Service() {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (isRunning) {
+            return START_STICKY
         }
 
         try {
@@ -141,12 +150,7 @@ class SpeedMonitorService : Service() {
         previousTxBytes = currentTxBytes
         previousTime = currentTime
 
-        try {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(currentDownloadMbps, currentUploadMbps))
-        } catch (e: Exception) {
-            Log.e(TAG, "Notification update error", e)
-        }
+        maybeUpdateNotification()
     }
 
     /**
@@ -229,7 +233,15 @@ class SpeedMonitorService : Service() {
 
         // Use dynamic bitmap icon showing speed in status bar
         try {
-            val icon = createSpeedIcon(downMbps, upMbps)
+            val iconKey = formatCompactForIcon(downMbps)
+            val icon = if (lastIconKey == iconKey && lastIcon != null) {
+                lastIcon!!
+            } else {
+                createSpeedIcon(downMbps, upMbps).also {
+                    lastIcon = it
+                    lastIconKey = iconKey
+                }
+            }
             builder.setSmallIcon(icon)
         } catch (e: Exception) {
             builder.setSmallIcon(android.R.drawable.ic_menu_info_details)
@@ -255,10 +267,43 @@ class SpeedMonitorService : Service() {
         }
     }
 
+    private fun maybeUpdateNotification() {
+        val now = System.currentTimeMillis()
+        val downDelta = kotlin.math.abs(currentDownloadMbps - lastNotifiedDownMbps)
+        val upDelta = kotlin.math.abs(currentUploadMbps - lastNotifiedUpMbps)
+        val shouldUpdateByValue = downDelta >= 0.10 || upDelta >= 0.10
+        val shouldUpdateByTime = now - lastNotificationMs >= NOTIFICATION_MIN_INTERVAL_MS
+        if (!shouldUpdateByValue && !shouldUpdateByTime) return
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(currentDownloadMbps, currentUploadMbps))
+            lastNotificationMs = now
+            lastNotifiedDownMbps = currentDownloadMbps
+            lastNotifiedUpMbps = currentUploadMbps
+        } catch (e: Exception) {
+            Log.e(TAG, "Notification update error", e)
+        }
+    }
+
+    private fun formatCompactForIcon(mbps: Double): String {
+        return if (mbps >= 1000) {
+            "%.1fG".format(mbps / 1000)
+        } else if (mbps >= 10) {
+            "%.0f".format(mbps)
+        } else if (mbps >= 1) {
+            "%.1f".format(mbps)
+        } else {
+            val kbps = mbps * 1000
+            "%.0f".format(kbps)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
         handler?.removeCallbacks(updateRunnable)
         handler = null
+        lastIcon = null
+        lastIconKey = null
     }
 }

@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.location.Geocoder
+import android.location.Location
 import android.location.LocationManager
 import android.view.View
 import android.widget.Toast
@@ -17,8 +18,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -49,6 +52,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,22 +62,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.netswiss.app.service.MockLocationService
-import com.netswiss.app.ui.components.AppCard
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.netswiss.app.ui.components.PrimaryButton
 import com.netswiss.app.ui.components.SegmentedControl
+import com.netswiss.app.ui.components.MockLocationSetupDialog
 import com.netswiss.app.ui.theme.GpsGreen
 import com.netswiss.app.ui.theme.Spacing
 import com.netswiss.app.ui.theme.surfaceColorAtElevation
@@ -94,42 +106,48 @@ import java.net.URLEncoder
 import java.net.URL
 import java.util.Locale
 import kotlin.math.ceil
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
-private data class SearchResult(val name: String, val lat: Double, val lon: Double)
-
-private enum class SimulationMode { Static, Path }
-private enum class TravelMode { Walk, Bike, Drive }
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.netswiss.app.ui.viewmodel.MockGpsViewModel
+import com.netswiss.app.ui.viewmodel.SimulationMode
+import com.netswiss.app.ui.viewmodel.TravelMode
 
 @Composable
 fun MockGpsScreen(
     modifier: Modifier = Modifier,
-    paddingValues: PaddingValues = PaddingValues()
+    paddingValues: PaddingValues = PaddingValues(),
+    viewModel: MockGpsViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
-    var latitude by remember { mutableStateOf("28.6139") }
-    var longitude by remember { mutableStateOf("77.2090") }
-    var isMocking by remember { mutableStateOf(MockLocationService.isRunning) }
-    var sheetExpanded by remember { mutableStateOf(true) }
-    var simulationMode by remember { mutableStateOf(SimulationMode.Static) }
-    var travelMode by remember { mutableStateOf(TravelMode.Walk) }
-    val routePoints = remember { mutableStateListOf<GeoPoint>() }
-    var drawMode by remember { mutableStateOf(false) }
-    var loopRoute by remember { mutableStateOf(true) }
-    var isSimulating by remember { mutableStateOf(false) }
-    var isPaused by remember { mutableStateOf(false) }
-    var simulationJob by remember { mutableStateOf<Job?>(null) }
+    // Observe ViewModel State
+    val latitude by viewModel.latitude.collectAsState()
+    val longitude by viewModel.longitude.collectAsState()
+    val isMocking by viewModel.isMocking.collectAsState()
+    val sheetExpanded by viewModel.sheetExpanded.collectAsState()
+    val simulationMode by viewModel.simulationMode.collectAsState()
+    val travelMode by viewModel.travelMode.collectAsState()
+    val routePoints by viewModel.routePoints.collectAsState()
+    val drawMode by viewModel.drawMode.collectAsState()
+    val loopRoute by viewModel.loopRoute.collectAsState()
+    val isSimulating by viewModel.isSimulating.collectAsState()
+    val isPaused by viewModel.isPaused.collectAsState()
+    val isLocating by viewModel.isLocating.collectAsState()
+    val hasInitialCentered by viewModel.hasInitialCentered.collectAsState()
 
     // Search state
-    var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var isSearching by remember { mutableStateOf(false) }
-    var showResults by remember { mutableStateOf(false) }
-    var lastSearchQuery by remember { mutableStateOf("") }
-    var searchJob by remember { mutableStateOf<Job?>(null) }
-    val searchCache = remember { mutableMapOf<String, List<SearchResult>>() }
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val showResults by viewModel.showResults.collectAsState()
+    val showSetupDialog by viewModel.showSetupDialog.collectAsState()
+
+    val sharedPrefs = context.getSharedPreferences("mock_gps_prefs", Context.MODE_PRIVATE)
 
     // Map reference for programmatic control
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
@@ -166,170 +184,15 @@ fun MockGpsScreen(
 
     // Update state when service changes
     LaunchedEffect(Unit) {
-        isMocking = MockLocationService.isRunning
+        viewModel.syncMockingState()
     }
 
-
-    // Check if "Mock Location App" is selected in Developer Options
-    fun isMockLocationEnabled(): Boolean {
-        return try {
-            val opsManager = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
-            opsManager.checkOp(
-                android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
-                android.os.Process.myUid(),
-                context.packageName
-            ) == android.app.AppOpsManager.MODE_ALLOWED
-        } catch (_: Exception) {
-            false
+    LaunchedEffect(Unit) {
+        val hasShownTutorial = sharedPrefs.getBoolean("has_shown_tutorial", false)
+        if (!hasShownTutorial && !viewModel.isMockLocationEnabled(context)) {
+            viewModel.setShowSetupDialog(true)
+            sharedPrefs.edit().putBoolean("has_shown_tutorial", true).apply()
         }
-    }
-
-    fun openDeveloperOptions() {
-        try {
-            context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-        } catch (_: Exception) {
-            Toast.makeText(context, "Enable Developer Options manually", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun sendMockUpdate(lat: Double, lng: Double): Boolean {
-        return try {
-            val intent = Intent(context, MockLocationService::class.java).apply {
-                action = if (MockLocationService.isRunning) {
-                    MockLocationService.ACTION_UPDATE
-                } else {
-                    null
-                }
-                putExtra(MockLocationService.EXTRA_LATITUDE, lat)
-                putExtra(MockLocationService.EXTRA_LONGITUDE, lng)
-            }
-
-            if (!MockLocationService.isRunning && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
-            }
-            true
-        } catch (e: Exception) {
-            com.netswiss.app.util.CrashLogger.logException(
-                context,
-                "MockGpsScreen",
-                "Mock Update Failure",
-                e
-            )
-            false
-        }
-    }
-
-    // Service Start Logic
-    fun startMockService(lat: Double, lng: Double) {
-        val hasLocPerm = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!hasLocPerm) {
-            Toast.makeText(context, "Location permission missing", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (!isMockLocationEnabled()) {
-            Toast.makeText(
-                context,
-                "Please select 'NetSwiss' as Mock Location App in Developer Options",
-                Toast.LENGTH_LONG
-            ).show()
-            openDeveloperOptions()
-            return
-        }
-
-        if (sendMockUpdate(lat, lng)) {
-            isMocking = true
-        } else {
-            Toast.makeText(context, "Failed to start mock location service", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun stopMockService() {
-        simulationJob?.cancel()
-        simulationJob = null
-        isSimulating = false
-        isPaused = false
-        try {
-            val stopIntent = Intent(context, MockLocationService::class.java).apply {
-                action = MockLocationService.ACTION_STOP
-            }
-            context.startService(stopIntent)
-        } catch (_: Exception) {
-            // Fallback below still stops service if startService fails.
-        }
-
-        context.stopService(Intent(context, MockLocationService::class.java))
-        isMocking = false
-    }
-
-    fun startFromInputs() {
-        val lat = latitude.toDoubleOrNull()
-        val lng = longitude.toDoubleOrNull()
-        if (lat == null || lng == null) {
-            Toast.makeText(context, "Invalid coordinates", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (lat !in -90.0..90.0 || lng !in -180.0..180.0) {
-            Toast.makeText(context, "Coordinates out of range", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val hasPerm = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (hasPerm) {
-            startMockService(lat, lng)
-        } else {
-            pendingStart = { startMockService(lat, lng) }
-            permissionLauncher.launch(manifestPermissions.toTypedArray())
-        }
-    }
-
-    fun speedMetersPerSecond(): Double {
-        return when (travelMode) {
-            TravelMode.Walk -> 1.4
-            TravelMode.Bike -> 4.8
-            TravelMode.Drive -> 13.9
-        }
-    }
-
-    fun travelProfile(): String {
-        return when (travelMode) {
-            TravelMode.Walk -> "walking"
-            TravelMode.Bike -> "cycling"
-            TravelMode.Drive -> "driving"
-        }
-    }
-
-    fun routeDistanceMeters(points: List<GeoPoint>): Double {
-        if (points.size < 2) return 0.0
-        var total = 0.0
-        for (i in 0 until points.lastIndex) {
-            total += points[i].distanceToAsDouble(points[i + 1])
-        }
-        return total
-    }
-
-    fun formatDistance(distanceMeters: Double): String {
-        return if (distanceMeters >= 1000.0) {
-            "%.2f km".format(distanceMeters / 1000.0)
-        } else {
-            "%.0f m".format(distanceMeters)
-        }
-    }
-
-    fun formatEta(totalDistanceMeters: Double): String {
-        if (totalDistanceMeters <= 0.0) return "--"
-        val etaSeconds = (totalDistanceMeters / speedMetersPerSecond()).toInt().coerceAtLeast(1)
-        val minutes = etaSeconds / 60
-        val seconds = etaSeconds % 60
-        return if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
     }
 
     fun updateMarker(point: GeoPoint) {
@@ -340,10 +203,10 @@ fun MockGpsScreen(
                 map.overlays.add(created)
                 markerRef = created
             }
-            val modeEmoji = when (travelMode) {
-                TravelMode.Walk -> "\uD83D\uDEB6"
-                TravelMode.Bike -> "\uD83D\uDEB4"
-                TravelMode.Drive -> "\uD83D\uDE97"
+            val modeEmoji = when (viewModel.travelMode.value) {
+                TravelMode.Walk -> "🚶"
+                TravelMode.Bike -> "🚴"
+                TravelMode.Drive -> "🚗"
             }
             marker.icon = createEmojiMarkerDrawable(context, modeEmoji)
             marker.position = point
@@ -364,6 +227,38 @@ fun MockGpsScreen(
             } catch (_: Exception) {
             }
             updateMarker(point)
+        }
+    }
+
+    fun startFromInputs() {
+        val lat = latitude.toDoubleOrNull()
+        val lng = longitude.toDoubleOrNull()
+        if (lat == null || lng == null) {
+            Toast.makeText(context, "Invalid coordinates", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (lat !in -90.0..90.0 || lng !in -180.0..180.0) {
+            Toast.makeText(context, "Coordinates out of range", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val hasPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPerm) {
+            if (!viewModel.isMockLocationEnabled(context)) {
+                viewModel.setShowSetupDialog(true)
+                return
+            }
+            if (viewModel.sendMockUpdate(context, lat, lng)) {
+                viewModel.setIsMocking(true)
+            } else {
+                Toast.makeText(context, "Failed to start mock location service", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            pendingStart = { startFromInputs() }
+            permissionLauncher.launch(manifestPermissions.toTypedArray())
         }
     }
 
@@ -411,10 +306,12 @@ fun MockGpsScreen(
             Toast.makeText(context, "Map not ready", Toast.LENGTH_SHORT).show()
             return
         }
-        if (routePoints.isEmpty()) {
-            routePoints.add(center)
-        } else {
-            routePoints[0] = center
+        viewModel.updateRoutePoints { points ->
+            if (points.isEmpty()) {
+                points.add(center)
+            } else {
+                points[0] = center
+            }
         }
         refreshRouteOverlay()
     }
@@ -425,13 +322,15 @@ fun MockGpsScreen(
             Toast.makeText(context, "Map not ready", Toast.LENGTH_SHORT).show()
             return
         }
-        when {
-            routePoints.isEmpty() -> {
-                routePoints.add(center)
-                routePoints.add(center)
+        viewModel.updateRoutePoints { points ->
+            when {
+                points.isEmpty() -> {
+                    points.add(center)
+                    points.add(center)
+                }
+                points.size == 1 -> points.add(center)
+                else -> points[points.lastIndex] = center
             }
-            routePoints.size == 1 -> routePoints.add(center)
-            else -> routePoints[routePoints.lastIndex] = center
         }
         refreshRouteOverlay()
     }
@@ -452,167 +351,27 @@ fun MockGpsScreen(
             return
         }
 
-        if (!isMockLocationEnabled()) {
-            Toast.makeText(
-                context,
-                "Select NetSwiss as Mock Location App in Developer Options",
-                Toast.LENGTH_LONG
-            ).show()
-            openDeveloperOptions()
-            return
-        }
-
-        simulationJob?.cancel()
-        isSimulating = true
-        isPaused = false
-
-        simulationJob = scope.launch {
-            val requestedPoints = routePoints.toList()
-            val routedPoints = withContext(Dispatchers.IO) {
-                fetchOsrmRoadRoute(
-                    points = requestedPoints,
-                    profile = travelProfile()
-                )
-            }
-            val simulationPath = if (routedPoints.size >= 2) {
-                routedPoints
-            } else {
-                if (requestedPoints.size >= 2) {
-                    Toast.makeText(
-                        context,
-                        "Road route unavailable, using straight path",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                requestedPoints
-            }
-
-            if (simulationPath.size >= 2) {
-                routePoints.clear()
-                routePoints.addAll(simulationPath)
-                refreshRouteOverlay()
-            }
-
-            val speedMps = speedMetersPerSecond()
-            val targetTickMs = 700L
-            var keepRunning = true
-            while (keepRunning && isSimulating) {
-                val pointsSnapshot = simulationPath
-                if (pointsSnapshot.size < 2) break
-                for (i in 0 until pointsSnapshot.lastIndex) {
-                    val from = pointsSnapshot[i]
-                    val to = pointsSnapshot[i + 1]
-                    val segmentDistance = from.distanceToAsDouble(to).coerceAtLeast(1.0)
-                    val segmentDurationMs = ((segmentDistance / speedMps) * 1000.0).toLong().coerceAtLeast(targetTickMs)
-                    val stepsPerSegment = ceil(segmentDurationMs.toDouble() / targetTickMs.toDouble()).toInt().coerceIn(1, 240)
-                    val delayMs = (segmentDurationMs / stepsPerSegment).coerceAtLeast(120L)
-                    for (step in 0..stepsPerSegment) {
-                        if (!isSimulating) break
-                        while (isPaused && isSimulating) {
-                            delay(200)
-                        }
-                        if (!isSimulating) break
-                        val fraction = step.toDouble() / stepsPerSegment.toDouble()
-                        val lat = from.latitude + ((to.latitude - from.latitude) * fraction)
-                        val lon = from.longitude + ((to.longitude - from.longitude) * fraction)
-                        latitude = "%.6f".format(lat)
-                        longitude = "%.6f".format(lon)
-                        moveMapTo(lat, lon, animate = false)
-                        sendMockUpdate(lat, lon)
-                        isMocking = true
-                        delay(delayMs)
-                    }
-                }
-                if (!loopRoute) {
-                    keepRunning = false
-                }
-            }
-            isSimulating = false
-            isPaused = false
-        }
-    }
-
-    fun launchSearch(query: String, showToastOnEmpty: Boolean) {
-        val trimmed = query.trim()
-        if (trimmed.isBlank()) {
-            showResults = false
-            searchResults = emptyList()
-            return
-        }
-        val cacheKey = trimmed.lowercase(Locale.getDefault())
-        val cached = searchCache[cacheKey]
-        if (cached != null) {
-            searchResults = cached
-            showResults = cached.isNotEmpty()
-            lastSearchQuery = trimmed
-            return
-        }
-        searchJob?.cancel()
-        isSearching = true
-        showResults = true
-        searchJob = scope.launch {
-            try {
-                val results = geocodeSearch(context, trimmed)
-                    .distinctBy { "${it.lat},${it.lon}" }
-                    .take(8)
-                searchResults = results
-                searchCache[cacheKey] = results
-                lastSearchQuery = trimmed
-                if (results.isEmpty() && showToastOnEmpty) {
-                    Toast.makeText(context, "No locations found", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                if (showToastOnEmpty) {
-                    Toast.makeText(context, "Search failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            } finally {
-                isSearching = false
-            }
+        viewModel.startPathSimulation(context) { lat, lon ->
+            moveMapTo(lat, lon, animate = false)
         }
     }
 
     fun submitSearch() {
         focusManager.clearFocus()
-        launchSearch(searchQuery, showToastOnEmpty = true)
+        viewModel.submitSearch(context)
     }
 
-    LaunchedEffect(searchQuery) {
-        val trimmed = searchQuery.trim()
-        if (trimmed.length < 2 || trimmed == lastSearchQuery) {
-            if (trimmed.isEmpty()) {
-                showResults = false
-                searchResults = emptyList()
-            }
-            return@LaunchedEffect
-        }
-        delay(350)
-        if (trimmed != searchQuery.trim()) {
-            return@LaunchedEffect
-        }
-        launchSearch(trimmed, showToastOnEmpty = false)
-    }
 
-    fun locateMe() {
+
+    fun locateMe(showToast: Boolean = true) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
             permissionLauncher.launch(manifestPermissions.toTypedArray())
             return
         }
-        try {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val lastKnown = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            if (lastKnown != null) {
-                latitude = "%.6f".format(lastKnown.latitude)
-                longitude = "%.6f".format(lastKnown.longitude)
-                moveMapTo(lastKnown.latitude, lastKnown.longitude)
-                Toast.makeText(context, "Location found", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Unable to get current location", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(context, "Location error: ${e.message}", Toast.LENGTH_SHORT).show()
+        viewModel.locateMe(context, showToast) { lat, lon ->
+            moveMapTo(lat, lon)
         }
     }
 
@@ -661,11 +420,11 @@ fun MockGpsScreen(
                                 val projection = mapView.projection
                                 val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as GeoPoint
                                 if (simulationMode == SimulationMode.Path && drawMode) {
-                                    routePoints.add(geoPoint)
+                                    viewModel.updateRoutePoints { it.add(geoPoint) }
                                     refreshRouteOverlay()
                                 } else {
-                                    latitude = "%.6f".format(geoPoint.latitude)
-                                    longitude = "%.6f".format(geoPoint.longitude)
+                                    viewModel.setLatitude("%.6f".format(geoPoint.latitude))
+                                    viewModel.setLongitude("%.6f".format(geoPoint.longitude))
                                     updateMarker(geoPoint)
                                 }
                             }
@@ -681,7 +440,7 @@ fun MockGpsScreen(
                             val projection = mapView.projection
                             val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as GeoPoint
                             val insertIndex = nearestSegmentInsertIndex(routePoints, geoPoint)
-                            routePoints.add(insertIndex + 1, geoPoint)
+                            viewModel.updateRoutePoints { it.add(insertIndex + 1, geoPoint) }
                             refreshRouteOverlay()
                             return true
                         }
@@ -696,7 +455,7 @@ fun MockGpsScreen(
                             val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as GeoPoint
                             val pointIndex = nearestPointIndex(routePoints, geoPoint)
                             if (pointIndex >= 0) {
-                                routePoints.removeAt(pointIndex)
+                                viewModel.updateRoutePoints { it.removeAt(pointIndex) }
                                 refreshRouteOverlay()
                                 return true
                             }
@@ -710,13 +469,24 @@ fun MockGpsScreen(
             modifier = Modifier.fillMaxSize()
         )
 
+        LaunchedEffect(mapViewRef) {
+            if (mapViewRef != null && !hasInitialCentered) {
+                viewModel.setHasInitialCentered(true)
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    locateMe(showToast = false)
+                }
+            }
+        }
+
         val lifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(lifecycleOwner) {
             val observer = LifecycleEventObserver { _, event ->
                 when (event) {
                     Lifecycle.Event.ON_RESUME -> {
                         mapViewRef?.onResume()
-                        isMocking = MockLocationService.isRunning
+                        viewModel.setIsMocking(MockLocationService.isRunning)
                     }
                     Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
                     else -> {}
@@ -725,7 +495,6 @@ fun MockGpsScreen(
             val lifecycle = lifecycleOwner.lifecycle
             lifecycle.addObserver(observer)
             onDispose {
-                simulationJob?.cancel()
                 lifecycle.removeObserver(observer)
                 mapViewRef?.onDetach()
                 mapViewRef = null
@@ -738,63 +507,84 @@ fun MockGpsScreen(
 
         val topInset = paddingValues.calculateTopPadding()
         val bottomInset = paddingValues.calculateBottomPadding()
+        val screenHeightDp = LocalConfiguration.current.screenHeightDp
+        val expandedSheetMaxHeight = (screenHeightDp * 0.42f).dp
+        val darkGlass = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+        val glassContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (darkGlass) 0.60f else 0.82f)
+        val glassElevatedColor = MaterialTheme.colorScheme.surface.copy(alpha = if (darkGlass) 0.68f else 0.88f)
+        val glassBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (darkGlass) 0.24f else 0.12f)
+        val glassGradientTop = MaterialTheme.colorScheme.onSurface.copy(alpha = if (darkGlass) 0.10f else 0.06f)
+        val glassGradientBottom = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.01f)
 
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = Spacing.lg + topInset, start = Spacing.lg, end = Spacing.lg)
         ) {
-            AppCard(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp)
+                shape = RoundedCornerShape(22.dp),
+                color = glassContainerColor,
+                tonalElevation = 0.dp,
+                border = BorderStroke(1.dp, glassBorderColor)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(glassGradientTop, glassGradientBottom)
+                            )
+                        )
                 ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = {
-                            searchQuery = it
-                            if (it.isBlank()) {
-                                showResults = false
-                                searchResults = emptyList()
-                            }
-                        },
-                        placeholder = { Text("Search for destination...") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { submitSearch() }),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            cursorColor = MaterialTheme.colorScheme.primary
-                        ),
-                        textStyle = MaterialTheme.typography.bodyMedium,
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                    )
-                    FilledTonalButton(
-                        onClick = { submitSearch() },
-                        enabled = searchQuery.trim().isNotEmpty() && !isSearching,
-                        shape = RoundedCornerShape(20.dp),
-                        contentPadding = PaddingValues(horizontal = Spacing.sm),
-                        modifier = Modifier
-                            .height(36.dp)
-                            .padding(start = Spacing.xs)
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.sm, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "Search", style = MaterialTheme.typography.labelLarge)
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { newValue: String ->
+                                viewModel.setSearchQuery(newValue)
+                                if (newValue.isBlank()) {
+                                    viewModel.setShowResults(false)
+                                    viewModel.setSearchResults(emptyList())
+                                }
+                            },
+                            placeholder = { Text("Search for destination...") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { submitSearch() }),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.primary
+                            ),
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilledTonalButton(
+                            onClick = { submitSearch() },
+                            enabled = searchQuery.trim().isNotEmpty() && !isSearching,
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = Spacing.sm),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .padding(start = Spacing.xs)
+                        ) {
+                            Text(text = "Search", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
@@ -809,11 +599,14 @@ fun MockGpsScreen(
             }
 
             AnimatedVisibility(visible = showResults && searchResults.isNotEmpty()) {
-                AppCard(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Spacing.xs),
-                    contentPadding = PaddingValues(0.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    color = glassContainerColor,
+                    tonalElevation = 0.dp,
+                    border = BorderStroke(1.dp, glassBorderColor)
                 ) {
                     Column {
                         searchResults.forEachIndexed { index, result ->
@@ -821,12 +614,10 @@ fun MockGpsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        latitude = "%.6f".format(result.lat)
-                                        longitude = "%.6f".format(result.lon)
-                                        showResults = false
-                                        searchQuery = result.name.take(40)
-                                        focusManager.clearFocus()
-                                        moveMapTo(result.lat, result.lon)
+                                        viewModel.handleSearchResultClick(result) { resultLat, resultLon ->
+                                            moveMapTo(resultLat, resultLon)
+                                            focusManager.clearFocus()
+                                        }
                                     }
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -846,7 +637,7 @@ fun MockGpsScreen(
                                 )
                             }
                             if (index < searchResults.size - 1) {
-                                Divider(
+                                androidx.compose.material3.HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                                 )
@@ -858,23 +649,45 @@ fun MockGpsScreen(
         }
 
         val controlColors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (darkGlass) 0.72f else 0.92f),
             contentColor = MaterialTheme.colorScheme.onSurface
         )
-        Column(
+        val controlYOffset = if (sheetExpanded) (-96).dp else (-56).dp
+        Surface(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = Spacing.md, top = topInset),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                .offset { IntOffset(0, controlYOffset.roundToPx()) }
+                .padding(end = Spacing.md)
+                .shadow(8.dp, RoundedCornerShape(18.dp)),
+            shape = RoundedCornerShape(18.dp),
+            color = glassElevatedColor,
+            tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, glassBorderColor)
         ) {
-            FilledIconButton(onClick = { mapViewRef?.controller?.zoomIn() }, colors = controlColors) {
-                Icon(Icons.Default.Add, contentDescription = "Zoom In")
-            }
-            FilledIconButton(onClick = { mapViewRef?.controller?.zoomOut() }, colors = controlColors) {
-                Icon(Icons.Default.Remove, contentDescription = "Zoom Out")
-            }
-            FilledIconButton(onClick = { locateMe() }, colors = controlColors) {
-                Icon(Icons.Default.MyLocation, contentDescription = "Locate Me")
+            Column(
+                modifier = Modifier.padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                FilledIconButton(
+                    onClick = { mapViewRef?.controller?.zoomIn() },
+                    colors = controlColors
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Zoom In")
+                }
+                FilledIconButton(
+                    onClick = { mapViewRef?.controller?.zoomOut() },
+                    colors = controlColors
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Zoom Out")
+                }
+                FilledIconButton(
+                    onClick = { locateMe() },
+                    colors = controlColors,
+                    enabled = !isLocating
+                ) {
+                    Icon(Icons.Default.MyLocation, contentDescription = "Locate Me")
+                }
             }
         }
 
@@ -884,8 +697,9 @@ fun MockGpsScreen(
                     .align(Alignment.Center)
                     .padding(bottom = if (sheetExpanded) Spacing.xxxl * 3 else Spacing.xxxl * 2),
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                tonalElevation = 2.dp
+                color = glassContainerColor,
+                tonalElevation = 0.dp,
+                border = BorderStroke(1.dp, glassBorderColor)
             ) {
                 Text(
                     text = "SPOOFED LOCATION",
@@ -913,9 +727,20 @@ fun MockGpsScreen(
                 .fillMaxWidth()
                 .padding(horizontal = Spacing.lg, vertical = Spacing.md + bottomInset),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp),
-            tonalElevation = 2.dp
+            color = glassContainerColor,
+            tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, glassBorderColor)
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(glassGradientTop, glassGradientBottom)
+                        ),
+                        shape = RoundedCornerShape(28.dp)
+                    )
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -925,7 +750,7 @@ fun MockGpsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(20.dp)
-                        .clickable { sheetExpanded = !sheetExpanded },
+                        .clickable { viewModel.setSheetExpanded(!sheetExpanded) },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -965,14 +790,14 @@ fun MockGpsScreen(
                     Switch(
                         checked = isMocking,
                         onCheckedChange = { enabled ->
-                            if (enabled) {
+                            if (MockLocationService.isRunning) {
                                 if (simulationMode == SimulationMode.Path) {
                                     startPathSimulation()
                                 } else {
                                     startFromInputs()
                                 }
                             } else {
-                                stopMockService()
+                                viewModel.stopMockService(context)
                             }
                         }
                     )
@@ -984,18 +809,26 @@ fun MockGpsScreen(
                     selectedIndex = if (simulationMode == SimulationMode.Static) 0 else 1,
                     onSelected = { index ->
                         if (index == 0) {
-                            simulationMode = SimulationMode.Static
-                            drawMode = false
-                            isPaused = false
+                            viewModel.setSimulationMode(SimulationMode.Static)
+                            viewModel.setDrawMode(false)
+                            viewModel.setIsPaused(false)
+                            viewModel.setSheetExpanded(true)
                         } else {
-                            simulationMode = SimulationMode.Path
-                            drawMode = true
+                            viewModel.setSimulationMode(SimulationMode.Path)
+                            viewModel.setDrawMode(true)
+                            viewModel.setSheetExpanded(false)
                         }
                     }
                 )
 
                 AnimatedVisibility(visible = sheetExpanded) {
                     Column {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = expandedSheetMaxHeight)
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                        ) {
                         Spacer(modifier = Modifier.height(Spacing.sm))
                         if (simulationMode == SimulationMode.Static) {
                             Row(
@@ -1004,7 +837,7 @@ fun MockGpsScreen(
                             ) {
                                 OutlinedTextField(
                                     value = latitude,
-                                    onValueChange = { latitude = it },
+                                    onValueChange = { newValue: String -> viewModel.setLatitude(newValue) },
                                     label = { Text("Latitude") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     singleLine = true,
@@ -1013,7 +846,7 @@ fun MockGpsScreen(
                                 )
                                 OutlinedTextField(
                                     value = longitude,
-                                    onValueChange = { longitude = it },
+                                    onValueChange = { newValue: String -> viewModel.setLongitude(newValue) },
                                     label = { Text("Longitude") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     singleLine = true,
@@ -1091,7 +924,7 @@ fun MockGpsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
                             ) {
                                 FilledTonalButton(
-                                    onClick = { drawMode = !drawMode },
+                                    onClick = { viewModel.setDrawMode(!drawMode) },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
@@ -1102,7 +935,7 @@ fun MockGpsScreen(
                                 androidx.compose.material3.OutlinedButton(
                                     onClick = {
                                         if (routePoints.isNotEmpty()) {
-                                            routePoints.removeAt(routePoints.lastIndex)
+                                            viewModel.updateRoutePoints { list -> list.removeAt(list.lastIndex) }
                                             refreshRouteOverlay()
                                         }
                                     },
@@ -1124,7 +957,7 @@ fun MockGpsScreen(
                             Spacer(modifier = Modifier.height(Spacing.xs))
                             androidx.compose.material3.OutlinedButton(
                                 onClick = {
-                                    routePoints.clear()
+                                    viewModel.clearRoutePoints()
                                     refreshRouteOverlay()
                                 },
                                 modifier = Modifier
@@ -1147,7 +980,7 @@ fun MockGpsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
                             ) {
                                 FilledTonalButton(
-                                    onClick = { travelMode = TravelMode.Walk },
+                                    onClick = { viewModel.setTravelMode(TravelMode.Walk) },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
@@ -1158,7 +991,7 @@ fun MockGpsScreen(
                                     Text(text = "Walk")
                                 }
                                 FilledTonalButton(
-                                    onClick = { travelMode = TravelMode.Bike },
+                                    onClick = { viewModel.setTravelMode(TravelMode.Bike) },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
@@ -1169,7 +1002,7 @@ fun MockGpsScreen(
                                     Text(text = "Bike")
                                 }
                                 FilledTonalButton(
-                                    onClick = { travelMode = TravelMode.Drive },
+                                    onClick = { viewModel.setTravelMode(TravelMode.Drive) },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
@@ -1181,14 +1014,14 @@ fun MockGpsScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(Spacing.xs))
-                            val totalDistance = routeDistanceMeters(routePoints)
+                            val totalDistance = viewModel.routeDistanceMeters(routePoints)
                             Text(
-                                text = "Distance: ${formatDistance(totalDistance)}",
+                                text = "Distance: ${viewModel.formatDistance(totalDistance)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "ETA (${travelMode.name.lowercase()}): ${formatEta(totalDistance)}",
+                                text = "ETA (${travelMode.name.lowercase()}): ${viewModel.formatEta(totalDistance)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1202,7 +1035,7 @@ fun MockGpsScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Switch(checked = loopRoute, onCheckedChange = { loopRoute = it })
+                                Switch(checked = loopRoute, onCheckedChange = { viewModel.setLoopRoute(it) })
                             }
 
                             Spacer(modifier = Modifier.height(Spacing.xs))
@@ -1215,7 +1048,7 @@ fun MockGpsScreen(
                                         if (!isSimulating) {
                                             startPathSimulation()
                                         } else {
-                                            isPaused = !isPaused
+                                            viewModel.setIsPaused(!isPaused)
                                         }
                                     },
                                     modifier = Modifier
@@ -1232,7 +1065,7 @@ fun MockGpsScreen(
                                     )
                                 }
                                 androidx.compose.material3.OutlinedButton(
-                                    onClick = { stopMockService() },
+                                    onClick = { viewModel.stopMockService(context) },
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
@@ -1249,14 +1082,61 @@ fun MockGpsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        }
                     }
                 }
             }
+            }
+        }
+
+        if (showSetupDialog) {
+            MockLocationSetupDialog(
+                onDismiss = { viewModel.setShowSetupDialog(false) },
+                onOpenSettings = { 
+                    viewModel.setShowSetupDialog(false)
+                    viewModel.openDeveloperOptions(context)
+                }
+            )
         }
     }
 }
 
-private fun nearestPointIndex(points: List<GeoPoint>, target: GeoPoint): Int {
+
+// --- Top Level Extracted Map Functions ---
+
+suspend fun getBestCurrentLocation(context: Context): Location? {
+    val client = LocationServices.getFusedLocationProviderClient(context)
+    val highAcc = withTimeoutOrNull(7000L) {
+        awaitFusedLocation(client, Priority.PRIORITY_HIGH_ACCURACY)
+    }
+    if (highAcc != null) return highAcc
+
+    val balanced = withTimeoutOrNull(4000L) {
+        awaitFusedLocation(client, Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+    }
+    if (balanced != null) return balanced
+
+    return withTimeoutOrNull(2500L) {
+        suspendCancellableCoroutine { cont ->
+            client.lastLocation
+                .addOnSuccessListener { loc -> cont.resume(loc) }
+                .addOnFailureListener { cont.resume(null) }
+        }
+    }
+}
+
+suspend fun awaitFusedLocation(
+    client: com.google.android.gms.location.FusedLocationProviderClient,
+    priority: Int
+): Location? = suspendCancellableCoroutine { cont ->
+    val tokenSource = CancellationTokenSource()
+    cont.invokeOnCancellation { tokenSource.cancel() }
+    client.getCurrentLocation(priority, tokenSource.token)
+        .addOnSuccessListener { location -> cont.resume(location) }
+        .addOnFailureListener { cont.resume(null) }
+}
+
+fun nearestPointIndex(points: List<GeoPoint>, target: GeoPoint): Int {
     if (points.isEmpty()) return -1
     var bestIndex = -1
     var bestDistance = Double.MAX_VALUE
@@ -1270,7 +1150,7 @@ private fun nearestPointIndex(points: List<GeoPoint>, target: GeoPoint): Int {
     return bestIndex
 }
 
-private fun nearestSegmentInsertIndex(points: List<GeoPoint>, target: GeoPoint): Int {
+fun nearestSegmentInsertIndex(points: List<GeoPoint>, target: GeoPoint): Int {
     if (points.size < 2) return 0
     var bestIndex = 0
     var bestScore = Double.MAX_VALUE
@@ -1286,13 +1166,13 @@ private fun nearestSegmentInsertIndex(points: List<GeoPoint>, target: GeoPoint):
     return bestIndex
 }
 
-private fun squaredDistance(a: GeoPoint, b: GeoPoint): Double {
+fun squaredDistance(a: GeoPoint, b: GeoPoint): Double {
     val latDiff = a.latitude - b.latitude
     val lonDiff = a.longitude - b.longitude
     return latDiff * latDiff + lonDiff * lonDiff
 }
 
-private fun createEmojiMarkerDrawable(context: Context, emoji: String): BitmapDrawable {
+fun createEmojiMarkerDrawable(context: Context, emoji: String): BitmapDrawable {
     val width = 72
     val height = 92
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -1325,167 +1205,4 @@ private fun createEmojiMarkerDrawable(context: Context, emoji: String): BitmapDr
     canvas.drawPath(path, pinPaint)
 
     return BitmapDrawable(context.resources, bitmap)
-}
-
-private suspend fun geocodeSearch(context: Context, query: String): List<SearchResult> {
-    return withContext(Dispatchers.IO) {
-        val localResults = if (Geocoder.isPresent()) {
-            runCatching {
-                val geocoder = Geocoder(context, Locale.getDefault())
-                @Suppress("DEPRECATION")
-                val addresses = geocoder.getFromLocationName(query, 6) ?: emptyList()
-                addresses.mapNotNull { addr ->
-                    val name = buildString {
-                        if (!addr.featureName.isNullOrBlank()) append(addr.featureName)
-                        if (!addr.locality.isNullOrBlank()) {
-                            if (isNotEmpty()) append(", ")
-                            append(addr.locality)
-                        }
-                        if (!addr.adminArea.isNullOrBlank()) {
-                            if (isNotEmpty()) append(", ")
-                            append(addr.adminArea)
-                        }
-                        if (!addr.countryName.isNullOrBlank()) {
-                            if (isNotEmpty()) append(", ")
-                            append(addr.countryName)
-                        }
-                        if (isEmpty()) append("%.4f, %.4f".format(addr.latitude, addr.longitude))
-                    }
-                    SearchResult(
-                        name = name,
-                        lat = addr.latitude,
-                        lon = addr.longitude
-                    )
-                }
-            }.getOrElse { emptyList() }
-        } else {
-            emptyList()
-        }
-
-        val remoteResults = if (localResults.size < 6) {
-            runCatching { fetchNominatimResults(query) }.getOrElse { emptyList() }
-        } else {
-            emptyList()
-        }
-
-        (localResults + remoteResults)
-            .distinctBy { "${it.lat},${it.lon}" }
-    }
-}
-
-private fun parseNominatimAddress(displayName: String, address: JSONObject?): String {
-    val parts = ArrayList<String>(4)
-    val name = address?.optString("name").orEmpty()
-    val city = address?.optString("city")
-        .orEmpty()
-        .ifBlank { address?.optString("town").orEmpty() }
-        .ifBlank { address?.optString("village").orEmpty() }
-    val state = address?.optString("state").orEmpty()
-    val country = address?.optString("country").orEmpty()
-
-    if (name.isNotBlank()) parts.add(name)
-    if (city.isNotBlank() && city != name) parts.add(city)
-    if (state.isNotBlank()) parts.add(state)
-    if (country.isNotBlank()) parts.add(country)
-
-    return if (parts.isNotEmpty()) {
-        parts.joinToString(", ")
-    } else {
-        displayName.split(",").take(3).joinToString(", ").trim()
-    }
-}
-
-private fun fetchNominatimResults(query: String): List<SearchResult> {
-    val encoded = URLEncoder.encode(query, "UTF-8")
-    val url = URL(
-        "https://nominatim.openstreetmap.org/search" +
-            "?q=$encoded&format=json&addressdetails=1&limit=8&accept-language=en"
-    )
-
-    return try {
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("User-Agent", "NetSwiss/1.0 (support@netswiss.app)")
-        }
-        connection.inputStream.bufferedReader().use { reader ->
-            val response = reader.readText()
-            val array = JSONArray(response)
-            val results = ArrayList<SearchResult>(array.length())
-            for (i in 0 until array.length()) {
-                val item = array.getJSONObject(i)
-                val displayName = item.optString("display_name")
-                val lat = item.optString("lat").toDoubleOrNull() ?: continue
-                val lon = item.optString("lon").toDoubleOrNull() ?: continue
-                val address = item.optJSONObject("address")
-                val refinedName = parseNominatimAddress(displayName, address)
-                results.add(SearchResult(refinedName, lat, lon))
-            }
-            results
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
-}
-
-private fun fetchOsrmRoadRoute(points: List<GeoPoint>, profile: String): List<GeoPoint> {
-    if (points.size < 2) return emptyList()
-
-    val routed = ArrayList<GeoPoint>()
-    for (i in 0 until points.lastIndex) {
-        val segment = fetchOsrmRoadSegment(
-            from = points[i],
-            to = points[i + 1],
-            profile = profile
-        )
-        if (segment.size < 2) {
-            return emptyList()
-        }
-        if (routed.isEmpty()) {
-            routed.addAll(segment)
-        } else {
-            // Drop first point to avoid duplicating connection vertices.
-            routed.addAll(segment.drop(1))
-        }
-    }
-    return routed
-}
-
-private fun fetchOsrmRoadSegment(from: GeoPoint, to: GeoPoint, profile: String): List<GeoPoint> {
-    val coordinates = "${from.longitude},${from.latitude};${to.longitude},${to.latitude}"
-    val url = URL(
-        "https://router.project-osrm.org/route/v1/$profile/$coordinates" +
-            "?overview=full&geometries=geojson&steps=false"
-    )
-
-    return try {
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "NetSwiss/1.0")
-        }
-        connection.inputStream.bufferedReader().use { reader ->
-            val body = reader.readText()
-            val root = JSONObject(body)
-            if (root.optString("code") != "Ok") return emptyList()
-            val routes = root.optJSONArray("routes") ?: return emptyList()
-            if (routes.length() == 0) return emptyList()
-            val geometry = routes.getJSONObject(0).optJSONObject("geometry") ?: return emptyList()
-            val coords = geometry.optJSONArray("coordinates") ?: return emptyList()
-
-            val out = ArrayList<GeoPoint>(coords.length())
-            for (i in 0 until coords.length()) {
-                val pair = coords.optJSONArray(i) ?: continue
-                val lon = pair.optDouble(0, Double.NaN)
-                val lat = pair.optDouble(1, Double.NaN)
-                if (!lat.isNaN() && !lon.isNaN()) {
-                    out.add(GeoPoint(lat, lon))
-                }
-            }
-            out
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
 }

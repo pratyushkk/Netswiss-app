@@ -96,6 +96,12 @@ dependencies {
     // Core KTX
     implementation("androidx.core:core-ktx:1.12.0")
 
+    // DocumentFile (SAF)
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
